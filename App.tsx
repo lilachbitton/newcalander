@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, Settings, X } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, RefreshCw, AlertCircle, Settings, X, Key } from 'lucide-react';
 import { ViewMode, CalendarEvent } from './types';
 import { fetchOrigamiSlots } from './services/origamiService';
 import ViewSwitcher from './components/ViewSwitcher';
@@ -18,6 +18,7 @@ const App: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [apiBaseUrl, setApiBaseUrl] = useState('https://razerstar.origami.ms/api/v1');
   const [collectionId, setCollectionId] = useState('e_90');
+  const [apiKey, setApiKey] = useState('');
 
   // Initial fetch
   useEffect(() => {
@@ -28,12 +29,13 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const { events: data, error: errorMsg } = await fetchOrigamiSlots(apiBaseUrl, collectionId);
+      // Pass apiKey to the service
+      const { events: data, error: errorMsg } = await fetchOrigamiSlots(apiBaseUrl, collectionId, apiKey);
       setEvents(data);
       if (errorMsg) {
           setError(errorMsg);
           // Auto-open settings if it looks like a config error to help the user
-          if (errorMsg.includes('הגדרות') || errorMsg.includes('כתובת') || errorMsg.includes('אימות')) {
+          if (errorMsg.includes('הגדרות') || errorMsg.includes('כתובת') || errorMsg.includes('אימות') || errorMsg.includes('API')) {
             setShowSettings(true);
           }
       }
@@ -106,7 +108,7 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3 w-full md:w-auto justify-end">
             <button 
                 onClick={() => setShowSettings(true)}
-                className="p-2 text-gray-500 hover:bg-gray-100 rounded-full transition-all"
+                className={`p-2 rounded-full transition-all ${!apiKey ? 'text-red-500 bg-red-50 hover:bg-red-100' : 'text-gray-500 hover:bg-gray-100'}`}
                 title="הגדרות חיבור"
             >
                 <Settings size={20} />
@@ -147,7 +149,7 @@ const App: React.FC = () => {
                         onClick={() => setShowSettings(true)}
                         className="mt-2 text-blue-600 hover:underline font-medium"
                     >
-                        בדוק הגדרות שרת
+                        פתח הגדרות
                     </button>
                 </div>
             </div>
@@ -170,10 +172,9 @@ const App: React.FC = () => {
                         <X size={20} />
                     </button>
                 </div>
-                <div className="p-6 space-y-4">
+                <div className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
                     <div className="bg-blue-50 text-blue-800 p-3 rounded-md text-sm mb-4">
-                        אנא וודא שהכתובת היא כתובת ה-API ולא כתובת המערכת הרגילה.<br/>
-                        היא צריכה להסתיים ב-<code>/api/v1</code>.
+                        אנא וודא שהפרטים מדוייקים.
                     </div>
 
                     <div>
@@ -187,7 +188,7 @@ const App: React.FC = () => {
                             placeholder="https://razerstar.origami.ms/api/v1"
                         />
                         <p className="text-xs text-gray-500 mt-1">
-                           לדוגמה: <code>https://your-instance.origami.ms/api/v1</code>
+                           כתובת ה-API (סיומת <code>/api/v1</code>)
                         </p>
                     </div>
 
@@ -201,8 +202,23 @@ const App: React.FC = () => {
                             dir="ltr"
                             placeholder="e_90"
                         />
+                    </div>
+
+                    <div className="pt-2 border-t border-gray-100">
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1">
+                            <Key size={14} className="text-amber-500"/>
+                            מפתח API (Origami API Key)
+                        </label>
+                        <input 
+                            type="password" 
+                            value={apiKey}
+                            onChange={(e) => setApiKey(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-none text-left"
+                            dir="ltr"
+                            placeholder="הדבק כאן את המפתח..."
+                        />
                         <p className="text-xs text-gray-500 mt-1">
-                           המזהה של המשאב באוריגמי (למשל: <code>e_90</code>)
+                           אם לא הוגדר בשרת, ניתן להזין כאן ידנית.
                         </p>
                     </div>
                     

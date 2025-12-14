@@ -3,7 +3,7 @@ import { CalendarEvent, OrigamiRecord } from '../types';
 const FIELD_START = 'fld_1544';
 const FIELD_END = 'fld_1545';
 
-export const fetchOrigamiSlots = async (baseUrl?: string, collectionId?: string): Promise<{ events: CalendarEvent[], error?: string }> => {
+export const fetchOrigamiSlots = async (baseUrl?: string, collectionId?: string, apiKey?: string): Promise<{ events: CalendarEvent[], error?: string }> => {
   try {
     const response = await fetch('/api/proxy', {
       method: 'POST',
@@ -12,7 +12,8 @@ export const fetchOrigamiSlots = async (baseUrl?: string, collectionId?: string)
       },
       body: JSON.stringify({
         baseUrl: baseUrl,
-        collectionId: collectionId
+        collectionId: collectionId,
+        apiKey: apiKey // Pass the key to the proxy
       })
     });
 
@@ -27,7 +28,7 @@ export const fetchOrigamiSlots = async (baseUrl?: string, collectionId?: string)
       const details = (data.details || '').toLowerCase();
       
       if (userMsg.includes('Configuration Error')) {
-        userMsg = 'שגיאת הגדרות בשרת: חסר מפתח API (ORIGAMI_API_KEY)';
+        userMsg = 'חסר מפתח API. אנא הזן אותו בהגדרות.';
       } else if (details.includes('login') || details.includes('signin') || details.includes('כניסה')) {
         userMsg = 'שגיאת אימות: השרת הפנה לדף כניסה. אנא וודא שה-Base URL נכון (מכיל /api/v1) ושמפתח ה-API תקין.';
       } else if (details.includes('<!doctype') || details.includes('<html')) {

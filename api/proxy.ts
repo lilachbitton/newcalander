@@ -24,12 +24,7 @@ export default async function handler(request: Request) {
       });
     }
 
-    // 4. Configuration
-    const API_KEY = process.env.ORIGAMI_API_KEY;
-    const DEFAULT_BASE_URL = 'https://razerstar.origami.ms/api/v1';
-    const DEFAULT_COLLECTION_ID = 'e_90';
-
-    // 5. Safe Body Parsing
+    // 4. Safe Body Parsing
     let body: any = {};
     try {
       body = await request.json();
@@ -37,21 +32,28 @@ export default async function handler(request: Request) {
       // Body is optional or invalid JSON, ignore
     }
 
+    // 5. Configuration & Key Resolution
+    // Priority: Env Var > Client Body > Missing
+    const API_KEY = process.env.ORIGAMI_API_KEY || body.apiKey;
+    
+    const DEFAULT_BASE_URL = 'https://razerstar.origami.ms/api/v1';
+    const DEFAULT_COLLECTION_ID = 'e_90';
+
     // Support dynamic configuration from client
     // Ensure no trailing slash for base URL
     const clientBaseUrl = body.baseUrl ? body.baseUrl.replace(/\/$/, '') : null;
     const targetBaseUrl = clientBaseUrl || DEFAULT_BASE_URL;
     const targetCollectionId = body.collectionId || DEFAULT_COLLECTION_ID;
     
-    // Remove config params from the payload sent to Origami
-    const { baseUrl, collectionId, ...filterParams } = body;
+    // Remove config params from the payload sent to Origami (important so they don't break the search query)
+    const { baseUrl, collectionId, apiKey, ...filterParams } = body;
 
     // 6. Validate API Key
     if (!API_KEY) {
-      console.error('Missing ORIGAMI_API_KEY env var');
+      console.error('Missing ORIGAMI_API_KEY env var and no apiKey in body');
       return new Response(JSON.stringify({ 
         error: 'Server Configuration Error',
-        details: 'ORIGAMI_API_KEY is missing in Vercel settings.' 
+        details: 'ORIGAMI_API_KEY is missing. Please provide it in the Settings.' 
       }), {
         status: 200, // Return 200 so the frontend can parse the JSON error
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -76,14 +78,12 @@ export default async function handler(request: Request) {
     });
 
     // 8. Robust Response Handling
-    // Always read text first to avoid JSON parse errors on HTML responses (404 pages, etc)
     const responseText = await origamiResponse.text();
     
     let data;
     try {
       data = JSON.parse(responseText);
     } catch (parseError) {
-      // If parsing fails, it's likely HTML or plain text error
       console.error('Failed to parse Origami response as JSON. Content preview:', responseText.substring(0, 500));
       return new Response(JSON.stringify({ 
         error: 'Invalid Response from Origami', 
@@ -94,7 +94,6 @@ export default async function handler(request: Request) {
       });
     }
 
-    // If Origami returned a logical error (status not 2xx), wrap it
     if (!origamiResponse.ok) {
       return new Response(JSON.stringify({ 
         error: `Origami API Error (${origamiResponse.status})`, 
@@ -105,7 +104,6 @@ export default async function handler(request: Request) {
       });
     }
     
-    // Success
     return new Response(JSON.stringify(data), {
       status: 200,
       headers: { 
