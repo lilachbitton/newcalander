@@ -3,7 +3,13 @@ import { CalendarEvent, OrigamiRecord } from '../types';
 const FIELD_START = 'fld_1544';
 const FIELD_END = 'fld_1545';
 
-export const fetchOrigamiSlots = async (baseUrl?: string, collectionId?: string, apiKey?: string): Promise<{ events: CalendarEvent[], error?: string }> => {
+export const fetchOrigamiSlots = async (baseUrl: string, collectionId: string, apiKey: string): Promise<{ events: CalendarEvent[], error?: string }> => {
+  // Normalize URL: remove trailing slash and ensure /api/v1
+  let cleanBaseUrl = baseUrl.trim().replace(/\/$/, '');
+  
+  // Construct the correct Search API URL
+  const targetUrl = `${cleanBaseUrl}/space/${collectionId}/search`;
+
   try {
     const response = await fetch('/api/proxy', {
       method: 'POST',
@@ -11,50 +17,41 @@ export const fetchOrigamiSlots = async (baseUrl?: string, collectionId?: string,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        baseUrl: baseUrl,
-        collectionId: collectionId,
-        apiKey: apiKey // Pass the key to the proxy
+        targetUrl: targetUrl,
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: {
+          limit: 1000 // Get all events
+        }
       })
     });
 
-    // Even if status is 200, check if the JSON contains an "error" field
     const data = await response.json();
 
     if (data.error) {
-      console.warn("Proxy returned error:", data.error, data.details);
-      
-      // Improve user-friendly messages based on technical details
-      let userMsg = data.error;
-      const details = (data.details || '').toLowerCase();
-      
-      if (userMsg.includes('Configuration Error')) {
-        userMsg = 'חסר מפתח API. אנא הזן אותו בהגדרות.';
-      } else if (details.includes('login') || details.includes('signin') || details.includes('כניסה')) {
-        userMsg = 'שגיאת אימות: השרת הפנה לדף כניסה. אנא וודא שה-Base URL נכון (מכיל /api/v1) ושמפתח ה-API תקין.';
-      } else if (details.includes('<!doctype') || details.includes('<html')) {
-        userMsg = 'שגיאת כתובת: השרת החזיר דף HTML במקום מידע. בדוק את כתובת ה-API וה-Collection ID.';
-      } else if (data.details) {
-        userMsg += ` (${data.details.substring(0, 100)}...)`;
-      }
-      
-      return { 
-        events: getMockEvents(), 
-        error: userMsg 
-      };
+       console.error("Proxy Error Response:", data);
+       return { events: [], error: data.details || data.error };
+    }
+    
+    // Check for Origami API specific errors inside a 200 OK
+    if (data.message && !data.items && !data.data) {
+        return { events: [], error: `שגיאת אוריגמי: ${data.message}` };
     }
 
-    // Normal success flow
     const items: OrigamiRecord[] = data.items || data.data || [];
-    return { 
-        events: mapOrigamiDataToEvents(items),
-        error: undefined
-    };
+    
+    // Map to events
+    const events = mapOrigamiDataToEvents(items);
+    return { events, error: undefined };
 
   } catch (error: any) {
     console.error("Fetch failed:", error);
     return { 
-        events: getMockEvents(), 
-        error: 'שגיאת תקשורת: לא ניתן היה להתחבר לשרת ה-Proxy'
+        events: [], 
+        error: 'שגיאת תקשורת עם השרת'
     };
   }
 };
@@ -72,7 +69,7 @@ const mapOrigamiDataToEvents = (records: OrigamiRecord[]): CalendarEvent[] => {
 
       return {
         id: record._id || Math.random().toString(36).substr(2, 9),
-        title: record['title'] || 'פגישה שוריינה',
+        title: record['title'] || 'פגישה', // You might need to adjust the title field name
         start,
         end,
         color: 'bg-blue-100 text-blue-700 border-blue-200',
@@ -80,36 +77,4 @@ const mapOrigamiDataToEvents = (records: OrigamiRecord[]): CalendarEvent[] => {
       };
     })
     .filter((event): event is CalendarEvent => event !== null);
-};
-
-const getMockEvents = (): CalendarEvent[] => {
-  const today = new Date();
-  const events: CalendarEvent[] = [];
-  
-  const offsets = [
-    { day: 0, hour: 10, duration: 1 },
-    { day: 0, hour: 14, duration: 2 },
-    { day: 1, hour: 9, duration: 1.5 },
-    { day: 2, hour: 11, duration: 1 },
-    { day: -1, hour: 16, duration: 1 },
-  ];
-
-  offsets.forEach((o, index) => {
-    const start = new Date(today);
-    start.setDate(today.getDate() + o.day);
-    start.setHours(o.hour, 0, 0, 0);
-    
-    const end = new Date(start);
-    end.setHours(start.getHours() + Math.floor(o.duration), (o.duration % 1) * 60);
-
-    events.push({
-      id: `mock-${index}`,
-      title: 'פגישת ייעוץ',
-      start,
-      end,
-      color: index % 2 === 0 ? 'bg-indigo-100 text-indigo-700 border-indigo-200' : 'bg-emerald-100 text-emerald-700 border-emerald-200'
-    });
-  });
-
-  return events;
 };

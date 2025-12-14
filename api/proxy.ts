@@ -3,124 +3,75 @@ export const config = {
 };
 
 export default async function handler(request: Request) {
-  // 1. Setup CORS Headers
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  };
-
-  // 2. Handle Preflight (OPTIONS)
+  // 1. Setup CORS
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 200, headers: corsHeaders });
+    return new Response(null, {
+      status: 200,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
+  }
+
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method Not Allowed' }), { status: 405 });
   }
 
   try {
-    // 3. Check Method
-    if (request.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
-        status: 405,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
+    const body = await request.json();
+    const { targetUrl, method = 'POST', headers = {}, body: data } = body;
+
+    if (!targetUrl) {
+      return new Response(JSON.stringify({ error: 'Missing targetUrl' }), { status: 400 });
     }
 
-    // 4. Safe Body Parsing
-    let body: any = {};
-    try {
-      body = await request.json();
-    } catch (e) {
-      // Body is optional or invalid JSON, ignore
-    }
+    console.log(`Proxying to: ${targetUrl}`);
 
-    // 5. Configuration & Key Resolution
-    // Priority: Env Var > Client Body > Missing
-    const API_KEY = process.env.ORIGAMI_API_KEY || body.apiKey;
-    
-    const DEFAULT_BASE_URL = 'https://razerstar.origami.ms/api/v1';
-    const DEFAULT_COLLECTION_ID = 'e_90';
-
-    // Support dynamic configuration from client
-    // Ensure no trailing slash for base URL
-    const clientBaseUrl = body.baseUrl ? body.baseUrl.replace(/\/$/, '') : null;
-    const targetBaseUrl = clientBaseUrl || DEFAULT_BASE_URL;
-    const targetCollectionId = body.collectionId || DEFAULT_COLLECTION_ID;
-    
-    // Remove config params from the payload sent to Origami (important so they don't break the search query)
-    const { baseUrl, collectionId, apiKey, ...filterParams } = body;
-
-    // 6. Validate API Key
-    if (!API_KEY) {
-      console.error('Missing ORIGAMI_API_KEY env var and no apiKey in body');
-      return new Response(JSON.stringify({ 
-        error: 'Server Configuration Error',
-        details: 'ORIGAMI_API_KEY is missing. Please provide it in the Settings.' 
-      }), {
-        status: 200, // Return 200 so the frontend can parse the JSON error
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
-    }
-
-    // 7. Call Origami API
-    const origamiUrl = `${targetBaseUrl}/space/${targetCollectionId}/search`;
-    
-    console.log(`Proxying to: ${origamiUrl}`);
-
-    const origamiResponse = await fetch(origamiUrl, {
-      method: 'POST',
+    const response = await fetch(targetUrl, {
+      method,
       headers: {
-        'Authorization': `Bearer ${API_KEY}`,
-        'Content-Type': 'application/json'
+        ...headers,
+        // Override host to avoid Vercel/Origami conflicts
+        'Host': new URL(targetUrl).host,
       },
-      body: JSON.stringify({
-        limit: 1000,
-        ...filterParams
-      })
+      body: data ? JSON.stringify(data) : undefined,
     });
 
-    // 8. Robust Response Handling
-    const responseText = await origamiResponse.text();
-    
-    let data;
+    const responseText = await response.text();
+
+    // Try to parse JSON, if fails return text
+    let responseData;
     try {
-      data = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('Failed to parse Origami response as JSON. Content preview:', responseText.substring(0, 500));
-      return new Response(JSON.stringify({ 
-        error: 'Invalid Response from Origami', 
-        details: `Expected JSON but received ${origamiResponse.status} ${origamiResponse.statusText}. Content starts with: ${responseText.substring(0, 500)}...` 
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
+      responseData = JSON.parse(responseText);
+    } catch (e) {
+      // If response starts with <html, it's an error page (Login/404)
+      if (responseText.trim().toLowerCase().startsWith('<html')) {
+         return new Response(JSON.stringify({ 
+             error: 'HTML Response', 
+             details: 'התקבל דף HTML במקום מידע. בדוק את כתובת ה-API והמפתח. ייתכן והמערכת מפנה לדף התחברות.' 
+         }), { 
+             status: 200, // Return 200 to handle in client
+             headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+         });
+      }
+      responseData = { text: responseText };
     }
 
-    if (!origamiResponse.ok) {
-      return new Response(JSON.stringify({ 
-        error: `Origami API Error (${origamiResponse.status})`, 
-        details: data.message || JSON.stringify(data)
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
-      });
-    }
-    
-    return new Response(JSON.stringify(data), {
-      status: 200,
-      headers: { 
-        'Content-Type': 'application/json', 
-        'Cache-Control': 'no-store',
-        ...corsHeaders 
+    return new Response(JSON.stringify(responseData), {
+      status: response.status,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
       },
     });
 
   } catch (error: any) {
-    console.error('Proxy Fatal Error:', error);
-    return new Response(JSON.stringify({ 
-      error: 'Proxy Fatal Error', 
-      details: error.message || String(error)
-    }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    console.error('Proxy Error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
 }
