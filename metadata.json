@@ -1,0 +1,5 @@
+{
+  "name": "Origami Calendar Integration",
+  "description": "A responsive appointment calendar (Daily, Weekly, Monthly) integrated with Origami API to display slots based on start/end times.",
+  "requestFramePermissions": []
+}
